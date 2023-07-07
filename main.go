@@ -1,31 +1,66 @@
- package main 
+package main
 
- import (
-     "log"
-     "net/http"
-     "github.com/wesley-lewis/rediboard/db"
+import (
+	"log"
+	"net/http"
 
-     "github.com/gin-gonic/gin"
- )
+	"github.com/wesley-lewis/rediboard/db"
 
- var (
-     ListenAddr = "localhost:8080"
-     RedisAddr = "localhost:6379"
+	"github.com/gin-gonic/gin"
+)
+
+var (
+	ListenAddr = "localhost:8080"
+	RedisAddr  = "localhost:6379"
 )
 
 func main() {
-    database, err := db.NewDatabase(RedisAddr)
-    if err != nil {
-        log.Fatalf("Failed to connect to redis: %s", err.Error())
-    }
+	database, err := db.NewDatabase(RedisAddr)
+	if err != nil {
+		log.Fatalf("Failed to connect to redis: %s", err.Error())
+	}
 
-    router := initRouter(database)
-    router.Run(ListenAddr)
+	router := initRouter(database)
+	router.Run(ListenAddr)
 
 }
 
-func initRouter(database *Database) *gin.Engine {
-    r := gin.Default()
-    return r
-}
+func initRouter(database *db.Database) *gin.Engine {
+	r := gin.Default()
+	r.POST("/points", func(c *gin.Context) {
+		var userJson db.User
+		if err := c.ShouldBindJSON(&userJson); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		err := database.SaveUser(&userJson)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"user": userJson})
+	})
+	r.GET("points/:username", func(c *gin.Context) {
+		username := c.Param("username")
+		user, err := database.GetUser(username)
+		if err != nil {
+			if err == db.ErrNil {
+				c.JSON(http.StatusNotFound, gin.H{"error": " no user with the username found"})
+				return
+			}
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"user": user})
+	})
 
+	r.GET("/leaderboard", func(c *gin.Context) {
+		leaderboard, err := database.GetLeaderboard()
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{"leaderboard": leaderboard})
+	})
+	return r
+}
